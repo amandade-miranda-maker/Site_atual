@@ -5,6 +5,8 @@
     <title>CENTROWEG | Gestão e Performance</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
     <style>
         :root {
             --bg: #f4f7f6;
@@ -29,9 +31,9 @@
         .status-badge { padding: 4px 8px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
         .bg-danger { background: #ffe4e6; color: var(--danger); }
         .btn-group { margin-top: 20px; }
-        button { cursor: pointer; padding: 10px 15px; border-radius: 6px; border: none; font-weight: 600; transition: 0.2s; }
-        .btn-clear { background: #94a3b8; color: white; }
-        .btn-export { background: var(--accent); color: white; margin-right: 10px; }
+        button { cursor: pointer; padding: 10px 15px; border-radius: 6px; border: none; font-weight: 600; transition: 0.2s; width: 100%; margin-bottom: 10px;}
+        .btn-clear { background: #e11d48; color: white; }
+        .btn-export { background: #16a34a; color: white; }
     </style>
 </head>
 <body>
@@ -41,7 +43,7 @@
     <p style="font-size: 0.8rem; opacity: 0.7;">Relatório de Gestão Diária</p>
     <hr style="opacity: 0.2;">
     <div class="btn-group">
-        <button class="btn-export" onclick="exportarCSV()">Exportar Dados</button>
+        <button class="btn-export" onclick="exportarExcel()">Exportar Excel (Abas)</button>
         <button class="btn-clear" onclick="limparDados()">Resetar Dia</button>
     </div>
 </div>
@@ -125,86 +127,78 @@
             const ts = agora.getTime();
             const horaStr = agora.toLocaleTimeString();
 
-            // 1. Gravar Medição
             const novaMedicao = { ts, hora: horaStr, temp: data.temp, umid: data.umid, pres: data.pres };
             dbMedicoes.push(novaMedicao);
             if(dbMedicoes.length > 500) dbMedicoes.shift();
 
-            // 2. Lógica de Alertas Personalizada
-           
-            // Verificação de Temperatura (> 30)
-            if (data.temp > 30) {
-                dbAlertas.unshift({ hora: horaStr, msg: "ALTA TEMP", valor: data.temp + "°C" });
-            }
+            // Lógica de Alertas
+            if (data.temp > 30) dbAlertas.unshift({ hora: horaStr, msg: "ALTA TEMP", valor: data.temp + "°C" });
+            if (data.umid > 60) dbAlertas.unshift({ hora: horaStr, msg: "UMID ALTA", valor: data.umid + "%" });
+            else if (data.umid < 30) dbAlertas.unshift({ hora: horaStr, msg: "UMID BAIXA", valor: data.umid + "%" });
+            if (data.pres > 1020) dbAlertas.unshift({ hora: horaStr, msg: "PRES ALTA", valor: data.pres + " hPa" });
+            else if (data.pres < 990) dbAlertas.unshift({ hora: horaStr, msg: "PRES BAIXA", valor: data.pres + " hPa" });
 
-            // Verificação de Umidade (> 60% ou < 30%)
-            if (data.umid > 60) {
-                dbAlertas.unshift({ hora: horaStr, msg: "UMID ALTA", valor: data.umid + "%" });
-            } else if (data.umid < 30) {
-                dbAlertas.unshift({ hora: horaStr, msg: "UMID BAIXA", valor: data.umid + "%" });
-            }
-
-            // Verificação de Pressão (> 1020 hPa ou < 990 hPa)
-            if (data.pres > 1020) {
-                dbAlertas.unshift({ hora: horaStr, msg: "PRES ALTA", valor: data.pres + " hPa" });
-            } else if (data.pres < 990) {
-                dbAlertas.unshift({ hora: horaStr, msg: "PRES BAIXA", valor: data.pres + " hPa" });
-            }
-
-            // Limitar log
             if(dbAlertas.length > 50) dbAlertas.pop();
 
-            // 3. Persistência
             localStorage.setItem('medicoes', JSON.stringify(dbMedicoes));
             localStorage.setItem('alertas', JSON.stringify(dbAlertas));
 
             atualizarUI();
             chart.updateSeries([{ data: dbMedicoes.map(m => ({x: m.ts, y: m.temp})) }]);
 
-        } catch (e) {
-            console.error("Erro no processamento:", e);
-        }
+        } catch (e) { console.error("Erro:", e); }
     });
 
     function atualizarUI() {
         document.getElementById('total-leituras').innerText = dbMedicoes.length;
         document.getElementById('total-alertas').innerText = dbAlertas.length;
-       
         if(dbMedicoes.length > 0) {
-            const temps = dbMedicoes.map(m => m.temp);
-            const max = Math.max(...temps);
+            const max = Math.max(...dbMedicoes.map(m => m.temp));
             document.getElementById('max-temp').innerText = max.toFixed(1) + "°C";
         }
-
-        const htmlMed = dbMedicoes.slice().reverse().slice(0, 10).map(m =>
-            `<tr><td>${m.hora}</td><td>${m.temp}°C</td><td>${m.umid}%</td><td>${m.pres}hPa</td></tr>`
+        document.getElementById('lista-medicoes').innerHTML = dbMedicoes.slice().reverse().slice(0, 10).map(m =>
+            <tr><td>${m.hora}</td><td>${m.temp}°C</td><td>${m.umid}%</td><td>${m.pres}hPa</td></tr>
         ).join('');
-        document.getElementById('lista-medicoes').innerHTML = htmlMed;
-
-        const htmlAlert = dbAlertas.slice(0, 10).map(a =>
-            `<tr><td>${a.hora}</td><td><span class="status-badge bg-danger">${a.msg}</span></td><td>${a.valor}</td></tr>`
+        document.getElementById('lista-alertas').innerHTML = dbAlertas.slice(0, 10).map(a =>
+            <tr><td>${a.hora}</td><td><span class="status-badge bg-danger">${a.msg}</span></td><td>${a.valor}</td></tr>
         ).join('');
-        document.getElementById('lista-alertas').innerHTML = htmlAlert;
     }
 
     function limparDados() {
         if(confirm("Deseja resetar todos os logs do dia?")) {
             localStorage.clear();
-            dbMedicoes = [];
-            dbAlertas = [];
             location.reload();
         }
     }
 
-    function exportarCSV() {
-        let csv = "Hora,Temperatura,Umidade,Pressao\n";
-        dbMedicoes.forEach(m => { csv += `${m.hora},${m.temp},${m.umid},${m.pres}\n`; });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `relatorio_centroweg.csv`;
-        a.click();
+    // NOVA FUNÇÃO PARA EXPORTAR EXCEL COM ABAS
+    function exportarExcel() {
+        if(dbMedicoes.length === 0) {
+            alert("Não há dados para exportar.");
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+
+        // Aba 1: Medições
+        const wsMedicoes = XLSX.utils.json_to_sheet(dbMedicoes.map(m => ({
+            "Hora": m.hora,
+            "Temperatura (°C)": m.temp,
+            "Umidade (%)": m.umid,
+            "Pressão (hPa)": m.pres
+        })));
+        XLSX.utils.book_append_sheet(wb, wsMedicoes, "Medições");
+
+        // Aba 2: Alertas
+        const wsAlertas = XLSX.utils.json_to_sheet(dbAlertas.map(a => ({
+            "Hora": a.hora,
+            "Alerta": a.msg,
+            "Valor": a.valor
+        })));
+        XLSX.utils.book_append_sheet(wb, wsAlertas, "Alertas");
+
+        // Gerar arquivo
+        XLSX.writeFile(wb, Relatorio_CENTROWEG_${new Date().toLocaleDateString()}.xlsx);
     }
 </script>
 </body>
